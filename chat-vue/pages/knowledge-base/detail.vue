@@ -18,6 +18,13 @@
             <template v-else>
               <text class="kb-name">{{ knowledgeBase.name }}</text>
               <text class="kb-description">{{ knowledgeBase.description || '无描述' }}</text>
+              <view class="kb-chunking-info">
+                <text class="chunking-label">分块策略：</text>
+                <text class="chunking-value">{{ getChunkingStrategyText(knowledgeBase.chunking_strategy) }}</text>
+                <text v-if="knowledgeBase.chunking_strategy === 'fixed'" class="chunking-value">
+                  ({{ knowledgeBase.chunk_size || 1000 }}字符, 重叠{{ knowledgeBase.chunk_overlap || 200 }}字符)
+                </text>
+              </view>
             </template>
           </view>
           
@@ -121,6 +128,48 @@
             />
           </view>
           
+          <view class="form-item">
+            <text class="form-label">分块策略</text>
+            <view class="select-wrapper">
+              <select v-model="newKBChunkingStrategy" class="form-select">
+                <option value="fixed">固定长度 (Fixed)</option>
+                <option value="semantic">语义分块 (Semantic)</option>
+                <option value="sentence">句子分块 (Sentence)</option>
+              </select>
+            </view>
+          </view>
+          
+          <view class="form-row" v-if="newKBChunkingStrategy === 'fixed'">
+            <view class="form-item form-item-half">
+              <text class="form-label">分块大小</text>
+              <input 
+                type="number" 
+                v-model.number="newKBChunkSize"
+                placeholder="默认1000" 
+                min="100" 
+                max="10000"
+                class="form-input"
+              />
+            </view>
+            <view class="form-item form-item-half">
+              <text class="form-label">重叠大小</text>
+              <input 
+                type="number" 
+                v-model.number="newKBChunkOverlap"
+                placeholder="默认200" 
+                min="0" 
+                max="2000"
+                class="form-input"
+              />
+            </view>
+          </view>
+          
+          <view class="chunking-tip">
+            <text class="tip-text" v-if="newKBChunkingStrategy === 'fixed'">固定长度分块：按字符数分割，适合大多数场景</text>
+            <text class="tip-text" v-if="newKBChunkingStrategy === 'semantic'">语义分块：按语义相似性分割，效果更好但处理较慢</text>
+            <text class="tip-text" v-if="newKBChunkingStrategy === 'sentence'">句子分块：按句子边界分割，保持语义完整性</text>
+          </view>
+          
           <view class="dialog-buttons">
             <button class="cancel-btn" @tap="cancelRenameKB">取消</button>
             <button class="confirm-btn" @tap="confirmRenameKB" :disabled="!newKBName">保存</button>
@@ -165,6 +214,9 @@ export default {
       showRenameKB: false,
       newKBName: '',
       newKBDesc: '',
+      newKBChunkingStrategy: 'fixed',
+      newKBChunkSize: 1000,
+      newKBChunkOverlap: 200,
       
       // 用户相关
       userInfo: null,
@@ -651,6 +703,9 @@ export default {
       
       this.newKBName = this.knowledgeBase.name;
       this.newKBDesc = this.knowledgeBase.description || '';
+      this.newKBChunkingStrategy = this.knowledgeBase.chunking_strategy || 'fixed';
+      this.newKBChunkSize = this.knowledgeBase.chunk_size || 1000;
+      this.newKBChunkOverlap = this.knowledgeBase.chunk_overlap || 200;
       this.showRenameKB = true;
     },
     
@@ -685,7 +740,10 @@ export default {
         // 实际API调用
         const result = await api.put(`/llm/knowledge-bases/${this.kbId}`, {
           name: this.newKBName,
-          description: this.newKBDesc || ''
+          description: this.newKBDesc || '',
+          chunking_strategy: this.newKBChunkingStrategy,
+          chunk_size: this.newKBChunkSize,
+          chunk_overlap: this.newKBChunkOverlap
         });
         
         if (result && result.code === '0000') {
@@ -783,6 +841,15 @@ export default {
         'failed': '处理失败'
       };
       return statusMap[status] || status;
+    },
+    
+    getChunkingStrategyText(strategy) {
+      const strategyMap = {
+        'fixed': '固定长度分块',
+        'semantic': '语义分块',
+        'sentence': '句子分块'
+      };
+      return strategyMap[strategy] || '固定长度分块';
     },
     
     // 处理文档（向量化）
@@ -1518,5 +1585,65 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   display: block;
+}
+
+.kb-chunking-info {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #666;
+}
+
+.chunking-label {
+  font-weight: 500;
+  color: #555;
+}
+
+.chunking-value {
+  color: #333;
+  margin: 0 2px;
+}
+
+.form-select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background-color: #f8f9fa;
+  font-size: 14px;
+  box-sizing: border-box;
+  appearance: none;
+  height: 40px;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+}
+
+.form-select:focus {
+  border-color: var(--primary-color, #007AFF);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
+}
+
+.form-row {
+  display: flex;
+  gap: 15px;
+}
+
+.form-item-half {
+  flex: 1;
+}
+
+.chunking-tip {
+  padding: 8px 12px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  margin-top: -8px;
+  margin-bottom: 15px;
+}
+
+.tip-text {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
 }
 </style> 

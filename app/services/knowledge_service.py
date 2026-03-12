@@ -18,7 +18,8 @@ from common.db_utils import get_db_connection
 from app.entity.knowledge_base import KnowledgeBase, Document, DocumentChunk
 from app.dao.knowledge_dao import KnowledgeBaseDAO, DocumentDAO, DocumentChunkDAO
 from common.error_codes import APIException, ErrorCode
-from app.utils.document_loader import load_document, split_document
+from app.utils.document_loader import load_document
+from app.utils.document_chunker import split_document_with_strategy
 
 class KnowledgeService:
     """知识库服务类"""
@@ -120,7 +121,10 @@ class KnowledgeService:
                 name=dto.name,
                 description=dto.description,
                 created_by=user_id,
-                is_public=False
+                is_public=False,
+                chunking_strategy=dto.chunking_strategy,
+                chunk_size=dto.chunk_size,
+                chunk_overlap=dto.chunk_overlap
             )
             
             # 调用DAO创建
@@ -562,6 +566,14 @@ class KnowledgeService:
                 log_.error(f"文档不存在: {document_id}")
                 return
             
+            # 获取文档所属知识库
+            from app.dao.kb_document_dao import KBDocumentDAO
+            kb_ids = KBDocumentDAO().get_document_kbs(document_id)
+            kb = None
+            if kb_ids:
+                kb = KnowledgeBaseDAO().find_by_id(kb_ids[0])
+                log_.info(f"文档 {document_id} 所属知识库: {kb.get('name') if kb else '未知'}")
+            
             # 检查PostgreSQL向量扩展
             try:
                 with get_db_connection() as conn:
@@ -626,9 +638,19 @@ class KnowledgeService:
                 DocumentDAO().update_status(document_id, "failed")
                 return
             
-            # 分割文档
+            # 分割文档 - 使用知识库的分块配置
             try:
-                chunks = split_document(doc)
+                chunking_strategy = kb.get('chunking_strategy', 'fixed') if kb else 'fixed'
+                chunk_size = kb.get('chunk_size', 1000) if kb else 1000
+                chunk_overlap = kb.get('chunk_overlap', 200) if kb else 200
+                log_.info(f"使用分块策略: {chunking_strategy}, size={chunk_size}, overlap={chunk_overlap}")
+                
+                chunks = split_document_with_strategy(
+                    doc,
+                    strategy=chunking_strategy,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap
+                )
 
                 # 限制分块数量，防止资源过度占用
                 max_chunks = 1000
