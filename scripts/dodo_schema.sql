@@ -82,6 +82,9 @@ CREATE TABLE "public"."dodo_knowledge_bases" (
     "description" text,
     "created_by" int4 NOT NULL,
     "is_public" bool DEFAULT false,
+    "chunking_strategy" varchar(20) DEFAULT 'fixed',
+    "chunk_size" int4 DEFAULT 1000,
+    "chunk_overlap" int4 DEFAULT 200,
     "created_at" timestamptz(6) DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY ("id"),
     FOREIGN KEY ("created_by") REFERENCES "public"."dodo_users" ("id") ON DELETE NO ACTION
