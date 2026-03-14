@@ -420,14 +420,198 @@ class KnowledgeBaseBasicController(BaseResource):
     @api_exception_handler
     @login_optional
     def get(self):
-        """获取知识库基本信息列表"""
-        # 获取用户ID（可能为None，表示未登录用户）
+        """获取知识库列表（按个人/组织分类）"""
         user_id = getattr(g, 'user_id', None)
         
-        # 返回知识库列表
-        kb_list = self.knowledge_service.get_knowledge_bases_with_count(user_id)
+        kb_data = self.knowledge_service.get_knowledge_bases_with_count(user_id)
         return {
             "code": ErrorCode.SUCCESS.code,
             "message": ErrorCode.SUCCESS.message,
-            "data": kb_list
+            "data": kb_data
         }, 200
+    
+    @api_exception_handler
+    @login_required
+    def post(self):
+        """共享知识库到组织"""
+        data = self.get_params()
+        kb_id = data.get('kb_id')
+        org_id = data.get('org_id')
+        action = data.get('action', 'share')
+        
+        if not kb_id or not org_id:
+            return {
+                "code": ErrorCode.PARAM_ERROR.code,
+                "message": "缺少知识库ID或组织ID",
+                "data": None
+            }, 400
+        
+        try:
+            if action == 'share':
+                result = self.knowledge_service.share_knowledge_base_to_org(
+                    kb_id, org_id, g.user_id
+                )
+                return {
+                    "code": ErrorCode.SUCCESS.code,
+                    "message": "共享成功",
+                    "data": result
+                }, 200
+            elif action == 'unshare':
+                result = self.knowledge_service.unshare_knowledge_base_from_org(
+                    kb_id, org_id, g.user_id
+                )
+                return {
+                    "code": ErrorCode.SUCCESS.code,
+                    "message": "取消共享成功",
+                    "data": result
+                }, 200
+            else:
+                return {
+                    "code": ErrorCode.PARAM_ERROR.code,
+                    "message": "无效的操作类型",
+                    "data": None
+                }, 400
+        except FileNotFoundError as e:
+            return {
+                "code": ErrorCode.RESOURCE_NOT_FOUND.code,
+                "message": str(e),
+                "data": None
+            }, 404
+        except PermissionError as e:
+            return {
+                "code": ErrorCode.FORBIDDEN.code,
+                "message": str(e),
+                "data": None
+            }, 403
+        except Exception as e:
+            log_.error(f"共享操作失败: {str(e)}")
+            return {
+                "code": ErrorCode.SYSTEM_ERROR.code,
+                "message": f"操作失败: {str(e)}",
+                "data": None
+            }, 500
+
+
+class KnowledgeBaseShareController(BaseResource):
+    """知识库共享控制器"""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.knowledge_service = KnowledgeService()
+    
+    @api_exception_handler
+    @login_required
+    def get(self, kb_id):
+        """获取知识库共享到的组织列表"""
+        try:
+            orgs = self.knowledge_service.get_kb_shared_orgs(kb_id, g.user_id)
+            return {
+                "code": ErrorCode.SUCCESS.code,
+                "message": ErrorCode.SUCCESS.message,
+                "data": orgs
+            }, 200
+        except FileNotFoundError as e:
+            return {
+                "code": ErrorCode.RESOURCE_NOT_FOUND.code,
+                "message": str(e),
+                "data": None
+            }, 404
+        except PermissionError as e:
+            return {
+                "code": ErrorCode.FORBIDDEN.code,
+                "message": str(e),
+                "data": None
+            }, 403
+        except Exception as e:
+            log_.error(f"获取共享组织失败: {str(e)}")
+            return {
+                "code": ErrorCode.SYSTEM_ERROR.code,
+                "message": f"获取共享组织失败: {str(e)}",
+                "data": None
+            }, 500
+    
+    @api_exception_handler
+    @login_required
+    def post(self, kb_id):
+        """共享知识库到组织"""
+        data = self.get_params()
+        org_id = data.get('org_id')
+        
+        if not org_id:
+            return {
+                "code": ErrorCode.PARAM_ERROR.code,
+                "message": "缺少组织ID",
+                "data": None
+            }, 400
+        
+        try:
+            result = self.knowledge_service.share_knowledge_base_to_org(
+                kb_id, org_id, g.user_id
+            )
+            return {
+                "code": ErrorCode.SUCCESS.code,
+                "message": "共享成功",
+                "data": result
+            }, 200
+        except FileNotFoundError as e:
+            return {
+                "code": ErrorCode.RESOURCE_NOT_FOUND.code,
+                "message": str(e),
+                "data": None
+            }, 404
+        except PermissionError as e:
+            return {
+                "code": ErrorCode.FORBIDDEN.code,
+                "message": str(e),
+                "data": None
+            }, 403
+        except Exception as e:
+            log_.error(f"共享知识库失败: {str(e)}")
+            return {
+                "code": ErrorCode.SYSTEM_ERROR.code,
+                "message": f"共享知识库失败: {str(e)}",
+                "data": None
+            }, 500
+    
+    @api_exception_handler
+    @login_required
+    def delete(self, kb_id, org_id=None):
+        """取消知识库在组织的共享"""
+        if not org_id:
+            org_id = request.args.get('org_id')
+        
+        if not org_id:
+            return {
+                "code": ErrorCode.PARAM_ERROR.code,
+                "message": "缺少组织ID",
+                "data": None
+            }, 400
+        
+        try:
+            result = self.knowledge_service.unshare_knowledge_base_from_org(
+                kb_id, org_id, g.user_id
+            )
+            return {
+                "code": ErrorCode.SUCCESS.code,
+                "message": "取消共享成功",
+                "data": result
+            }, 200
+        except FileNotFoundError as e:
+            return {
+                "code": ErrorCode.RESOURCE_NOT_FOUND.code,
+                "message": str(e),
+                "data": None
+            }, 404
+        except PermissionError as e:
+            return {
+                "code": ErrorCode.FORBIDDEN.code,
+                "message": str(e),
+                "data": None
+            }, 403
+        except Exception as e:
+            log_.error(f"取消共享失败: {str(e)}")
+            return {
+                "code": ErrorCode.SYSTEM_ERROR.code,
+                "message": f"取消共享失败: {str(e)}",
+                "data": None
+            }, 500

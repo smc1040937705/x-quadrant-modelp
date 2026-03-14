@@ -22,7 +22,7 @@
     
     <!-- 侧边栏底部 - 版权信息 -->
     <view class="sidebar-footer">
-      <text class="footer-text">© 2025 渡渡鸟知识库</text>
+      <text class="footer-text"> 2025 渡渡鸟知识库</text>
     </view>
   </view>
 </template>
@@ -31,6 +31,7 @@
 import chatIcon from '@/static/images/chat.png'
 import knowledgeIcon from '@/static/images/knowledge.png'
 import extractionIcon from '@/static/images/extraction.png'
+import orgIcon from '@/static/images/user.png'
 import logoImage from '@/static/images/logo.png'
 
 export default {
@@ -40,6 +41,12 @@ export default {
       currentPath: '',
       // 导航菜单项，只包含主要功能
       navItems: [
+        {
+          pagePath: '/pages/organization/index',
+          text: '组织管理',
+          iconPath: orgIcon,
+          selectedIconPath: orgIcon
+        },
         {
           pagePath: '/pages/knowledge-base/index',
           text: '知识库管理',

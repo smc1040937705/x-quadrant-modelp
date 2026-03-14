@@ -1,70 +1,58 @@
 <template>
-  <view class="watermark-page">
-    <!-- 自定义导航栏 -->
-    <view class="custom-navbar">
-      <view class="navbar-left" @tap="goBack">
-        <text class="back-icon">‹</text>
+  <app-layout title="文档水印" :show-back="true">
+    <view class="watermark-container">
+      <!-- 提示信息 -->
+      <view class="info-card">
+        <text class="info-icon">💧</text>
+        <text class="info-text">上传图片添加文字或图片水印，支持透明度、位置、旋转等自定义设置</text>
       </view>
-      <view class="navbar-title">
-        <text>文档水印</text>
-      </view>
-      <view class="navbar-right"></view>
-    </view>
-    
-    <scroll-view class="content-scroll" scroll-y>
-      <view class="watermark-container">
-        <!-- 提示信息 -->
-        <view class="info-card">
-          <text class="info-icon">💧</text>
-          <text class="info-text">上传图片添加文字或图片水印，支持透明度、位置、旋转等自定义设置</text>
-        </view>
-        
-        <!-- 文件上传区域 -->
-        <view class="upload-card">
-          <text class="card-title">选择图片</text>
-          <view class="upload-zone" @tap="selectFile">
-            <view v-if="!originalFile" class="upload-empty">
-              <text class="upload-icon">📁</text>
-              <text class="upload-hint">点击选择图片</text>
-              <text class="upload-support">支持 JPG、PNG 格式</text>
+      
+      <!-- 文件上传区域 -->
+      <view class="upload-card">
+        <text class="card-title">选择图片</text>
+        <view class="upload-zone" @tap="selectFile">
+          <view v-if="!originalFile" class="upload-empty">
+            <text class="upload-icon">📁</text>
+            <text class="upload-hint">点击选择图片</text>
+            <text class="upload-support">支持 JPG、PNG 格式</text>
+          </view>
+          <view v-else class="file-selected">
+            <text class="file-icon">🖼️</text>
+            <view class="file-detail">
+              <text class="file-name">{{ originalFile.name }}</text>
+              <text class="file-size">{{ formatFileSize(originalFile.size) }}</text>
             </view>
-            <view v-else class="file-selected">
-              <text class="file-icon">🖼️</text>
-              <view class="file-detail">
-                <text class="file-name">{{ originalFile.name }}</text>
-                <text class="file-size">{{ formatFileSize(originalFile.size) }}</text>
-              </view>
-              <text class="remove-icon" @tap.stop="removeFile">×</text>
-            </view>
+            <text class="remove-icon" @tap.stop="removeFile">×</text>
           </view>
         </view>
-        
-        <!-- 水印编辑器 -->
-        <view class="editor-card">
-          <text class="card-title">水印设置</text>
-          <WatermarkEditor v-model="watermarkConfig" @change="onConfigChange" />
-        </view>
-        
-        <!-- 预览区域 -->
-        <view class="preview-card">
-          <WatermarkPreview 
-            :original-file="originalFile" 
-            :watermark-config="watermarkConfig"
-          />
-        </view>
       </view>
-    </scroll-view>
-  </view>
+      
+      <!-- 水印编辑器 -->
+      <view class="editor-card">
+        <text class="card-title">水印设置</text>
+        <WatermarkEditor v-model="watermarkConfig" @change="onConfigChange" />
+      </view>
+      
+      <!-- 预览区域 -->
+      <view class="preview-card">
+        <WatermarkPreview 
+          :original-file="originalFile" 
+          :watermark-config="watermarkConfig"
+        />
+      </view>
+    </view>
+  </app-layout>
 </template>
 
 <script>
+import AppLayout from '../../../components/layout/AppLayout.vue';
 import WatermarkEditor from './WatermarkEditor.vue';
 import WatermarkPreview from './WatermarkPreview.vue';
 import { platformUtils } from '../../../utils/platform-adapter.js';
-import router from '../../../utils/router.js';
 
 export default {
   components: {
+    AppLayout,
     WatermarkEditor,
     WatermarkPreview
   },
@@ -98,10 +86,6 @@ export default {
   },
 
   methods: {
-    goBack() {
-      router.navigateBack(1, { useSmartFallback: true });
-    },
-    
     selectFile() {
       uni.chooseImage({
         count: 1,
@@ -146,58 +130,6 @@ export default {
 </script>
 
 <style scoped>
-.watermark-page {
-  width: 100%;
-  height: 100vh;
-  background: #f5f7fa;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 自定义导航栏 */
-.custom-navbar {
-  height: 44px;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 15px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.navbar-left,
-.navbar-right {
-  width: 60px;
-}
-
-.navbar-left {
-  display: flex;
-  align-items: center;
-}
-
-.back-icon {
-  font-size: 32px;
-  color: #333;
-  font-weight: 300;
-}
-
-.navbar-title {
-  flex: 1;
-  text-align: center;
-  font-size: 17px;
-  font-weight: 600;
-  color: #333;
-}
-
-/* 滚动内容 */
-.content-scroll {
-  flex: 1;
-  height: 0;
-}
-
 .watermark-container {
   padding: 15px;
   max-width: 680px;
@@ -252,6 +184,7 @@ export default {
   padding: 20px;
   text-align: center;
   transition: all 0.3s;
+  cursor: pointer;
 }
 
 .upload-zone:active {

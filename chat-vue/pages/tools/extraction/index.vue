@@ -1,110 +1,97 @@
 <template>
-  <view class="extraction-page">
-    <!-- 自定义导航栏 -->
-    <view class="custom-navbar">
-      <view class="navbar-left" @tap="goBack">
-        <text class="back-icon">‹</text>
+  <app-layout title="内容提取" :show-back="true">
+    <view class="extraction-container">
+      <!-- 提示信息 -->
+      <view class="info-card">
+        <text class="info-icon">💡</text>
+        <text class="info-text">上传文件并提供JSON模板，AI将智能提取结构化数据</text>
       </view>
-      <view class="navbar-title">
-        <text>内容提取</text>
+      
+      <!-- 文件上传区域 -->
+      <view class="upload-card">
+        <text class="card-title">选择文件</text>
+        <view class="upload-zone" @tap="selectFile">
+          <view v-if="!selectedFile" class="upload-empty">
+            <text class="upload-icon">📁</text>
+            <text class="upload-hint">点击选择文件</text>
+            <text class="upload-support">支持图片、PDF、Word、TXT等</text>
+          </view>
+          <view v-else class="file-selected">
+            <text class="file-icon">📄</text>
+            <view class="file-detail">
+              <text class="file-name">{{ selectedFile.name }}</text>
+              <text class="file-size">{{ formatFileSize(selectedFile.size) }}</text>
+            </view>
+            <text class="remove-icon" @tap.stop="removeFile">×</text>
+          </view>
+        </view>
       </view>
-      <view class="navbar-right"></view>
+      
+      <!-- JSON模板区域 -->
+      <view class="schema-card">
+        <view class="card-header">
+          <text class="card-title">JSON模板</text>
+          <text class="card-tip" v-if="!schema">可选择示例快速开始</text>
+        </view>
+        
+        <textarea 
+          v-model="schema" 
+          class="schema-input"
+          placeholder='{"name": "", "age": "", "gender": ""}'
+          :maxlength="-1"
+        />
+        
+        <!-- 示例模板 -->
+        <view v-if="!schema" class="example-chips">
+          <view class="chip" @tap="useExample('person')">
+            <text class="chip-text">个人信息</text>
+          </view>
+          <view class="chip" @tap="useExample('product')">
+            <text class="chip-text">产品信息</text>
+          </view>
+          <view class="chip" @tap="useExample('article')">
+            <text class="chip-text">文章摘要</text>
+          </view>
+        </view>
+      </view>
+      
+      <!-- 提取按钮 -->
+      <view class="action-bar">
+        <button 
+          class="extract-btn" 
+          :class="{ 'btn-disabled': !canExtract }"
+          :disabled="!canExtract"
+          @tap="extractContent"
+        >
+          <text v-if="loading">提取中...</text>
+          <text v-else>开始提取</text>
+        </button>
+      </view>
+      
+      <!-- 提取结果 -->
+      <view v-if="resultJson" class="result-card">
+        <view class="card-header">
+          <text class="card-title">提取结果</text>
+          <view class="result-actions">
+            <button class="action-btn" @tap="copyResult">
+              <text>复制</text>
+            </button>
+            <button class="action-btn" @tap="saveToHistory">
+              <text>保存</text>
+            </button>
+          </view>
+        </view>
+        <view class="result-content">
+          <text class="result-text">{{ prettyJson }}</text>
+        </view>
+      </view>
+      
+      <!-- 历史记录入口 -->
+      <view v-if="historyCount > 0" class="history-entry" @tap="showHistory">
+        <text class="history-text">历史记录 ({{ historyCount }})</text>
+        <text class="history-arrow">›</text>
+      </view>
     </view>
-    
-    <scroll-view class="content-scroll" scroll-y>
-      <view class="extraction-container">
-        <!-- 提示信息 -->
-        <view class="info-card">
-          <text class="info-icon">💡</text>
-          <text class="info-text">上传文件并提供JSON模板，AI将智能提取结构化数据</text>
-        </view>
-        
-        <!-- 文件上传区域 -->
-        <view class="upload-card">
-          <text class="card-title">选择文件</text>
-          <view class="upload-zone" @tap="selectFile">
-            <view v-if="!selectedFile" class="upload-empty">
-              <text class="upload-icon">📁</text>
-              <text class="upload-hint">点击选择文件</text>
-              <text class="upload-support">支持图片、PDF、Word、TXT等</text>
-            </view>
-            <view v-else class="file-selected">
-              <text class="file-icon">📄</text>
-              <view class="file-detail">
-                <text class="file-name">{{ selectedFile.name }}</text>
-                <text class="file-size">{{ formatFileSize(selectedFile.size) }}</text>
-              </view>
-              <text class="remove-icon" @tap.stop="removeFile">×</text>
-            </view>
-          </view>
-        </view>
-        
-        <!-- JSON模板区域 -->
-        <view class="schema-card">
-          <view class="card-header">
-            <text class="card-title">JSON模板</text>
-            <text class="card-tip" v-if="!schema">可选择示例快速开始</text>
-          </view>
-          
-          <textarea 
-            v-model="schema" 
-            class="schema-input"
-            placeholder='{"name": "", "age": "", "gender": ""}'
-            :maxlength="-1"
-          />
-          
-          <!-- 示例模板 -->
-          <view v-if="!schema" class="example-chips">
-            <view class="chip" @tap="useExample('person')">
-              <text class="chip-text">个人信息</text>
-            </view>
-            <view class="chip" @tap="useExample('product')">
-              <text class="chip-text">产品信息</text>
-            </view>
-            <view class="chip" @tap="useExample('article')">
-              <text class="chip-text">文章摘要</text>
-            </view>
-          </view>
-        </view>
-        
-        <!-- 提取按钮 -->
-        <view class="action-bar">
-          <button 
-            class="extract-btn" 
-            :class="{ 'btn-disabled': !canExtract }"
-            :disabled="!canExtract"
-            @tap="extractContent"
-          >
-            <text v-if="loading">提取中...</text>
-            <text v-else>开始提取</text>
-          </button>
-        </view>
-        
-        <!-- 提取结果 -->
-        <view v-if="resultJson" class="result-card">
-          <view class="card-header">
-            <text class="card-title">提取结果</text>
-            <view class="result-actions">
-              <button class="action-btn" @tap="copyResult">
-                <text>复制</text>
-              </button>
-              <button class="action-btn" @tap="saveToHistory">
-                <text>保存</text>
-              </button>
-            </view>
-          </view>
-          <view class="result-content">
-            <text class="result-text">{{ prettyJson }}</text>
-          </view>
-        </view>
-        
-        <!-- 历史记录入口 -->
-        <view v-if="historyCount > 0" class="history-entry" @tap="showHistory">
-          <text class="history-text">历史记录 ({{ historyCount }})</text>
-          <text class="history-arrow">›</text>
-        </view>
-      </view>
-    </scroll-view>
     
     <!-- 历史记录弹窗 -->
     <view v-if="showHistoryPopup" class="popup-mask" @tap="closeHistory">
@@ -141,14 +128,17 @@
         </view>
       </view>
     </view>
-  </view>
+  </app-layout>
 </template>
 
 <script>
+import AppLayout from '../../../components/layout/AppLayout.vue';
 import api from '../../../utils/api.js';
-import router from '../../../utils/router.js';
 
 export default {
+  components: {
+    AppLayout
+  },
   data() {
     return {
       selectedFile: null,
@@ -204,12 +194,10 @@ export default {
   
   onLoad() {
     this.loadHistory();
-    // 计算弹窗滚动区域高度，适配多端
     uni.getSystemInfo({
       success: (res) => {
-        // 预留头部与底部按钮区域高度
         this.windowHeight = res.windowHeight || 600;
-        const headerFooterReserve = 160; // 头部+底部+间距
+        const headerFooterReserve = 160;
         const maxPopupHeight = Math.floor(this.windowHeight * 0.8);
         this.popupScrollHeight = Math.max(200, maxPopupHeight - headerFooterReserve);
       }
@@ -217,10 +205,6 @@ export default {
   },
   
   methods: {
-    goBack() {
-      router.navigateBack(1, { useSmartFallback: true });
-    },
-    
     selectFile() {
       uni.chooseImage({
         count: 1,
@@ -443,58 +427,6 @@ export default {
 </script>
 
 <style scoped>
-.extraction-page {
-  width: 100%;
-  height: 100vh;
-  background: #f5f7fa;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 自定义导航栏 */
-.custom-navbar {
-  height: 44px;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 15px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.navbar-left,
-.navbar-right {
-  width: 60px;
-}
-
-.navbar-left {
-  display: flex;
-  align-items: center;
-}
-
-.back-icon {
-  font-size: 32px;
-  color: #333;
-  font-weight: 300;
-}
-
-.navbar-title {
-  flex: 1;
-  text-align: center;
-  font-size: 17px;
-  font-weight: 600;
-  color: #333;
-}
-
-/* 滚动内容 */
-.content-scroll {
-  flex: 1;
-  height: 0;
-}
-
 .extraction-container {
   padding: 15px;
   max-width: 680px;
@@ -561,6 +493,7 @@ export default {
   padding: 20px;
   text-align: center;
   transition: all 0.3s;
+  cursor: pointer;
 }
 
 .upload-zone:active {
@@ -658,6 +591,7 @@ export default {
   font-size: 12px;
   color: #666;
   transition: all 0.3s;
+  cursor: pointer;
 }
 
 .chip:active {
@@ -733,6 +667,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
 }
 
 .history-text {
@@ -790,7 +725,6 @@ export default {
 
 .popup-scroll {
   padding: 15px 20px;
-  /* 高度通过内联样式动态设置，确保多端可滚动 */
 }
 
 .empty-state {
@@ -816,6 +750,7 @@ export default {
   border-radius: 10px;
   padding: 12px;
   margin-bottom: 10px;
+  cursor: pointer;
 }
 
 .history-item-header {
@@ -877,7 +812,7 @@ export default {
 @media screen and (min-width: 768px) {
   .extraction-container {
     padding: 30px;
-    max-width: 720px; /* PC端稍微放宽但仍居中窄栏显示 */
+    max-width: 720px;
   }
   
   .upload-zone:hover {
@@ -896,4 +831,3 @@ export default {
   }
 }
 </style>
-

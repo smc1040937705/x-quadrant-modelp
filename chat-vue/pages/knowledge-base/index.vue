@@ -4,32 +4,127 @@
       <!-- 知识库管理区域 -->
       <view class="kb-section">
         <view class="section-header">
-          <view class="section-title">渡渡鸟知识库</view>
-          <button class="create-kb-btn" @tap="showCreateKBDialog">创建资料库</button>
+          <view class="section-title">知识库</view>
+          <button class="create-kb-btn" @tap="showCreateKBDialog">创建知识库</button>
+        </view>
+        
+        <!-- Tab切换 -->
+        <view class="kb-tabs">
+          <view 
+            :class="['tab-item', { active: activeTab === 'personal' }]" 
+            @tap="switchTab('personal')"
+          >
+            <text class="tab-text">个人知识库</text>
+            <text class="tab-count">{{ personalKBs.length }}</text>
+          </view>
+          <view 
+            v-for="org in organizations" 
+            :key="org.org_id"
+            :class="['tab-item', { active: activeTab === 'org_' + org.org_id }]" 
+            @tap="switchTab('org_' + org.org_id)"
+          >
+            <text class="tab-text">{{ org.org_name }}</text>
+            <text class="tab-count">{{ org.knowledge_bases ? org.knowledge_bases.length : 0 }}</text>
+          </view>
         </view>
         
         <view v-if="loadingKBs" class="loading">
           <text>加载中...</text>
         </view>
         
-        <view v-else-if="knowledgeBases.length === 0" class="empty-state">
-          <text>暂无知识资料库</text>
+        <!-- 个人知识库内容 -->
+        <view v-else-if="activeTab === 'personal'" class="kb-content">
+          <view v-if="personalKBs.length === 0" class="empty-state">
+            <text class="empty-icon">📚</text>
+            <text class="empty-text">暂无个人知识库</text>
+            <text class="empty-hint">点击上方"创建知识库"按钮开始创建</text>
+          </view>
+          <view v-else class="kb-grid">
+            <view v-for="kb in personalKBs" :key="kb.id" class="kb-card" @tap="navigateToDetail(kb.id)">
+              <view class="kb-card-content">
+                <view class="kb-card-header">
+                  <text class="kb-name">{{ kb.name }}</text>
+                  <text class="kb-doc-count">{{ kb.doc_count || 0 }}个文档</text>
+                </view>
+                <text class="kb-description">{{ kb.description || '无描述' }}</text>
+                <view v-if="kb.shared_to_orgs && kb.shared_to_orgs.length > 0" class="kb-share-tags">
+                  <text class="share-tag" v-for="org in kb.shared_to_orgs" :key="org.org_id">
+                    已共享: {{ org.org_name }}
+                  </text>
+                </view>
+              </view>
+              <view class="kb-card-footer">
+                <button class="action-btn rename-btn" @tap.stop="showRenameKBDialog(kb)">编辑</button>
+                <button class="action-btn share-btn" @tap.stop="showShareDialog(kb)">共享</button>
+                <button class="action-btn delete-btn" @tap.stop="confirmDeleteKB(kb.id)">删除</button>
+              </view>
+            </view>
+          </view>
         </view>
         
-        <view v-else class="kb-grid">
-          <view v-for="kb in knowledgeBases" :key="kb.id" class="kb-card" @tap="navigateToDetail(kb.id)">
-            <view class="kb-card-content">
-              <view class="kb-card-header">
-                <text class="kb-name">{{ kb.name }}</text>
-                <text class="kb-doc-count">{{ kb.doc_count || 0 }}个文档</text>
+        <!-- 组织知识库内容 -->
+        <view v-else class="kb-content">
+          <view v-for="org in organizations" :key="org.org_id">
+            <view v-if="activeTab === 'org_' + org.org_id">
+              <view v-if="!org.knowledge_bases || org.knowledge_bases.length === 0" class="empty-state">
+                <text class="empty-icon">🏢</text>
+                <text class="empty-text">该组织暂无共享知识库</text>
+                <text class="empty-hint">将个人知识库共享到组织后，成员即可查看</text>
               </view>
-              <text class="kb-description">{{ kb.description || '无描述' }}</text>
+              <view v-else class="kb-grid">
+                <view v-for="kb in org.knowledge_bases" :key="kb.id" class="kb-card" @tap="navigateToDetail(kb.id)">
+                  <view class="kb-card-content">
+                    <view class="kb-card-header">
+                      <text class="kb-name">{{ kb.name }}</text>
+                      <text class="kb-doc-count">{{ kb.doc_count || 0 }}个文档</text>
+                    </view>
+                    <text class="kb-description">{{ kb.description || '无描述' }}</text>
+                    <view class="kb-creator-tag">
+                      <text v-if="kb.is_owner" class="creator-tag mine">我的</text>
+                      <text v-else class="creator-tag others">{{ kb.sharer_name || '他人' }}创建</text>
+                    </view>
+                  </view>
+                  <view class="kb-card-footer">
+                    <button v-if="kb.is_owner" class="action-btn unshare-btn" @tap.stop="confirmUnshare(kb, org.org_id)">取消共享</button>
+                  </view>
+                </view>
+              </view>
             </view>
-            
-            <view class="kb-card-footer">
-              <button class="action-btn rename-btn" @tap.stop="showRenameKBDialog(kb)">重命名</button>
-              <button class="action-btn delete-btn" @tap.stop="confirmDeleteKB(kb.id)">删除</button>
+          </view>
+        </view>
+        
+        <!-- 无组织提示 -->
+        <view v-if="organizations.length === 0 && !loadingKBs && activeTab === 'personal'" class="no-org-tip">
+          <text>您还没有加入任何组织，</text>
+          <text class="link" @tap="navigateToOrg">去创建或加入组织</text>
+        </view>
+      </view>
+      
+      <!-- 共享知识库弹窗 -->
+      <view v-if="showShare" class="dialog share-dialog">
+        <view class="dialog-content" @tap.stop>
+          <text class="dialog-title">共享知识库</text>
+          <text class="dialog-subtitle">选择要共享到的组织</text>
+          
+          <view class="org-list">
+            <view v-if="userOrganizations.length === 0" class="empty-org">
+              <text>您还没有加入任何组织</text>
             </view>
+            <view 
+              v-for="org in userOrganizations" 
+              :key="org.id"
+              :class="['org-item', { selected: selectedOrgIds.includes(org.id), disabled: isAlreadyShared(org.id) }]"
+              @tap="toggleOrgSelection(org.id)"
+            >
+              <text class="org-name">{{ org.name }}</text>
+              <text v-if="isAlreadyShared(org.id)" class="shared-mark">已共享</text>
+              <text v-else-if="selectedOrgIds.includes(org.id)" class="select-mark">✓</text>
+            </view>
+          </view>
+          
+          <view class="dialog-buttons">
+            <button class="cancel-btn" @tap="cancelShare">取消</button>
+            <button class="confirm-btn" @tap="confirmShare" :disabled="selectedOrgIds.length === 0">确认共享</button>
           </view>
         </view>
       </view>
@@ -64,6 +159,26 @@
                 @focus="focusDescInput"
                 @blur="isDescFocused = false"
               ></textarea>
+            </view>
+          </view>
+          
+          <view class="form-item">
+            <text class="form-label">归属</text>
+            <view class="owner-selector">
+              <view 
+                :class="['owner-option', { active: newKB.owner_type === 'personal' }]" 
+                @tap="newKB.owner_type = 'personal'; newKB.org_id = null"
+              >
+                个人
+              </view>
+              <view 
+                v-for="org in userOrganizations" 
+                :key="org.id"
+                :class="['owner-option', { active: newKB.owner_type === 'organization' && newKB.org_id === org.id }]" 
+                @tap="newKB.owner_type = 'organization'; newKB.org_id = org.id"
+              >
+                {{ org.name }}
+              </view>
             </view>
           </view>
           
@@ -215,7 +330,7 @@
 import api from '../../utils/api.js';
 import AppLayout from '../../components/layout/AppLayout.vue';
 import LoginDialog from '../../components/user/LoginDialog.vue';
-import { getCurrentUser } from '../../utils/auth.js';
+import { getCurrentUser, verifyToken } from '../../utils/auth.js';
 import auth from '../../utils/auth.js';
 
 export default {
@@ -226,8 +341,16 @@ export default {
   data() {
     return {
       // 知识库相关
-      knowledgeBases: [],
+      personalKBs: [],
+      organizations: [],
       loadingKBs: false,
+      userOrganizations: [],
+      activeTab: 'personal',
+      
+      // 共享知识库相关
+      showShare: false,
+      shareKb: null,
+      selectedOrgIds: [],
       
       // 创建知识库相关
       showCreateKB: false,
@@ -259,26 +382,62 @@ export default {
       isLoggedIn: false,
     }
   },
+  computed: {
+    // 获取已共享的组织ID列表
+    sharedOrgIds() {
+      if (!this.shareKb || !this.shareKb.shared_to_orgs) return [];
+      return this.shareKb.shared_to_orgs.map(org => org.org_id);
+    }
+  },
   onLoad() {
-    // 获取用户信息 - 只从本地存储获取一次
     this.userInfo = getCurrentUser();
     this.isLoggedIn = !!this.userInfo;
     
-    // 加载知识库列表
-    this.fetchKnowledgeBases();
-    
-    // 检测设备类型
     this.checkDeviceType();
     
-    // 监听用户信息更新事件
     uni.$on('userInfoUpdated', this.handleUserInfoUpdated);
+    
+    this.validateAndLoad();
   },
   onUnload() {
-    // 移除事件监听
     uni.$off('userInfoUpdated', this.handleUserInfoUpdated);
   },
   methods: {
-    // 检测设备类型
+    async validateAndLoad() {
+      const token = uni.getStorageSync('token');
+      
+      if (!token) {
+        this.redirectToLogin();
+        return;
+      }
+      
+      try {
+        const valid = await verifyToken();
+        if (!valid) {
+          this.redirectToLogin();
+          return;
+        }
+        
+        this.userInfo = getCurrentUser();
+        this.isLoggedIn = true;
+        
+        this.fetchKnowledgeBases();
+        this.fetchUserOrganizations();
+      } catch (e) {
+        console.error('验证token失败:', e);
+        this.redirectToLogin();
+      }
+    },
+    
+    redirectToLogin() {
+      uni.removeStorageSync('token');
+      uni.removeStorageSync('userInfo');
+      
+      uni.reLaunch({
+        url: '/pages/user/login/index'
+      });
+    },
+    
     checkDeviceType() {
       uni.getSystemInfo({
         success: (res) => {
@@ -304,42 +463,39 @@ export default {
       }
     },
 
-    // 获取知识库列表
     async fetchKnowledgeBases() {
       this.loadingKBs = true;
       
       try {
-        // 不需要再次验证token，直接使用本地存储的用户信息
-        const result = await api.get('/llm/knowledge-bases/basic', {}, this.isLoggedIn);
+        const result = await api.get('/llm/knowledge-bases/basic');
         
         if (result && (result.code === '0000' || result.code === 'SUCCESS')) {
-          this.knowledgeBases = result.data || [];
+          const data = result.data || {};
+          this.personalKBs = data.personal || [];
+          this.organizations = data.organizations || [];
         } else if (result && result.code === 'UNAUTHORIZED') {
-          this.knowledgeBases = [];
-          // 清除登录状态
+          this.personalKBs = [];
+          this.organizations = [];
           uni.removeStorageSync('userInfo');
           uni.removeStorageSync('token');
           this.isLoggedIn = false;
           
-          // 显示提示
           uni.showToast({
             title: '登录已过期，请重新登录',
             icon: 'none',
             duration: 2000
           });
           
-          // 跳转到登录页
           setTimeout(() => {
             uni.reLaunch({ 
               url: '/pages/user/login/index' 
             });
           }, 1500);
-          return; // 提前返回，不执行后续代码
+          return;
         } else {
-          // 其他错误情况
-          this.knowledgeBases = [];
+          this.personalKBs = [];
+          this.organizations = [];
           
-          // 显示错误信息
           uni.showToast({
             title: result?.message || '获取知识库列表失败',
             icon: 'none',
@@ -348,7 +504,8 @@ export default {
         }
       } catch (error) {
         console.error('获取知识库列表失败:', error);
-        this.knowledgeBases = [];
+        this.personalKBs = [];
+        this.organizations = [];
         
         // 检查是否是网络错误
         const isNetworkError = error.code === 'NETWORK_ERROR' || 
@@ -390,19 +547,108 @@ export default {
     
     // 导航到知识库详情页
     navigateToDetail(kbId) {
-      // 找到对应的知识库
-      const kb = this.knowledgeBases.find(item => item.id === kbId);
-      if (!kb) {
-        uni.showToast({
-          title: '知识库不存在',
-          icon: 'none'
-        });
+      uni.navigateTo({
+        url: `/pages/knowledge-base/detail?id=${kbId}`
+      });
+    },
+    
+    switchTab(tab) {
+      this.activeTab = tab;
+    },
+    
+    showShareDialog(kb) {
+      this.shareKb = kb;
+      this.selectedOrgIds = [];
+      this.showShare = true;
+    },
+    
+    // 取消共享
+    cancelShare() {
+      this.showShare = false;
+      this.shareKb = null;
+      this.selectedOrgIds = [];
+    },
+    
+    // 检查是否已共享到某组织
+    isAlreadyShared(orgId) {
+      return this.sharedOrgIds.includes(orgId);
+    },
+    
+    // 切换组织选择
+    toggleOrgSelection(orgId) {
+      if (this.isAlreadyShared(orgId)) return;
+      
+      const index = this.selectedOrgIds.indexOf(orgId);
+      if (index > -1) {
+        this.selectedOrgIds.splice(index, 1);
+      } else {
+        this.selectedOrgIds.push(orgId);
+      }
+    },
+    
+    // 确认共享
+    async confirmShare() {
+      if (this.selectedOrgIds.length === 0) {
+        api.showError('请选择要共享的组织');
         return;
       }
       
-      // 传递知识库信息到详情页
+      try {
+        let successCount = 0;
+        for (const orgId of this.selectedOrgIds) {
+          const result = await api.post(`/llm/knowledge-bases/${this.shareKb.id}/share`, {
+            org_id: orgId
+          });
+          if (result && (result.code === '0000' || result.code === 'SUCCESS')) {
+            successCount++;
+          }
+        }
+        
+        if (successCount > 0) {
+          api.showSuccess(`成功共享到 ${successCount} 个组织`);
+          this.fetchKnowledgeBases();
+        }
+        
+        this.cancelShare();
+      } catch (error) {
+        console.error('共享知识库失败:', error);
+        api.showError('共享知识库失败');
+      }
+    },
+    
+    // 确认取消共享
+    confirmUnshare(kb, orgId) {
+      uni.showModal({
+        title: '确认取消共享',
+        content: '取消共享后，组织成员将无法访问该知识库，确定要取消吗？',
+        success: async (res) => {
+          if (res.confirm) {
+            await this.unshareKnowledgeBase(kb.id, orgId);
+          }
+        }
+      });
+    },
+    
+    // 取消共享知识库
+    async unshareKnowledgeBase(kbId, orgId) {
+      try {
+        const result = await api.delete(`/llm/knowledge-bases/${kbId}/share/${orgId}`);
+        if (result && (result.code === '0000' || result.code === 'SUCCESS')) {
+          api.showSuccess('取消共享成功');
+          this.fetchKnowledgeBases();
+        } else {
+          api.showError(result?.message || '取消共享失败');
+        }
+      } catch (error) {
+        console.error('取消共享失败:', error);
+        api.showError('取消共享失败');
+      }
+    },
+    
+    // 导航到组织页面
+    navigateToOrg() {
       uni.navigateTo({
-        url: `/pages/knowledge-base/detail?id=${kbId}&name=${encodeURIComponent(kb.name)}&description=${encodeURIComponent(kb.description || '')}`
+        url: '/pages/organization/index'
       });
     },
     
@@ -707,6 +953,26 @@ export default {
           textarea.focus();
         }
       });
+    },
+    
+    // 获取用户组织列表
+    async fetchUserOrganizations() {
+      if (!this.isLoggedIn) {
+        this.userOrganizations = [];
+        return;
+      }
+      
+      try {
+        const result = await api.get('/org/organizations');
+        if (result && (result.code === '0000' || result.code === 'SUCCESS')) {
+          this.userOrganizations = result.data || [];
+        } else {
+          this.userOrganizations = [];
+        }
+      } catch (error) {
+        console.error('获取组织列表失败:', error);
+        this.userOrganizations = [];
+      }
     }
   }
 }
@@ -732,12 +998,6 @@ export default {
   color: #333;
 }
 
-.section-subtitle {
-  font-size: 14px;
-  color: #666;
-  margin-top: 5px;
-}
-
 .create-kb-btn {
   background-color: var(--primary-color, #007AFF);
   color: white;
@@ -747,15 +1007,169 @@ export default {
   border: none;
 }
 
-/* 知识库卡片网格布局 */
-.kb-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
-  margin-bottom: 30px;
+.kb-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  padding-bottom: 5px;
 }
 
-/* 知识库卡片样式 */
+.tab-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background-color: #f5f5f5;
+  border-radius: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.3s;
+}
+
+.tab-item:hover {
+  background-color: #e8e8e8;
+}
+
+.tab-item.active {
+  background-color: var(--primary-color, #007AFF);
+  color: white;
+}
+
+.tab-text {
+  font-size: 14px;
+}
+
+.tab-count {
+  background-color: rgba(0, 0, 0, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.tab-item.active .tab-count {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.kb-content {
+  margin-top: 10px;
+}
+
+.kb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  background-color: #f9f9f9;
+  border-radius: 12px;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-text {
+  font-size: 16px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.empty-hint {
+  font-size: 14px;
+  color: #999;
+  margin-bottom: 20px;
+}
+
+.create-btn {
+  background-color: var(--primary-color, #007AFF);
+  color: white;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: none;
+}
+
+.kb-category {
+  margin-bottom: 20px;
+}
+
+.category-header {
+  display: flex;
+  align-items: center;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.category-header:hover {
+  background-color: #e9ecef;
+}
+
+.category-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  flex: 1;
+}
+
+.category-count {
+  font-size: 14px;
+  color: #666;
+  background-color: #e0e0e0;
+  padding: 2px 10px;
+  border-radius: 12px;
+  margin-right: 10px;
+}
+
+.category-role {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-right: 10px;
+}
+
+.category-role.owner {
+  background-color: #e3f2fd;
+  color: #1976d2;
+}
+
+.category-role.member {
+  background-color: #fff3e0;
+  color: #f57c00;
+}
+
+.category-arrow {
+  font-size: 12px;
+  color: #666;
+  transition: transform 0.3s;
+}
+
+.category-arrow.expanded {
+  transform: rotate(180deg);
+}
+
+.kb-list {
+  margin-top: 10px;
+  padding-left: 15px;
+}
+
+.empty-category {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+}
+
 .kb-card {
   background-color: white;
   border-radius: 10px;
@@ -764,31 +1178,28 @@ export default {
   transition: transform 0.2s, box-shadow 0.2s;
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 150px;
+  margin-bottom: 15px;
 }
 
 .kb-card:hover {
-  transform: translateY(-5px);
+  transform: translateY(-3px);
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
 }
 
 .kb-card-content {
   padding: 15px;
   flex-grow: 1;
-  display: flex;
-  flex-direction: column;
 }
 
 .kb-card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .kb-name {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: #333;
   word-break: break-word;
@@ -801,17 +1212,51 @@ export default {
   padding: 2px 8px;
   border-radius: 10px;
   white-space: nowrap;
-  margin-left: 10px;
 }
 
 .kb-description {
   font-size: 14px;
   color: #666;
-  flex-grow: 1;
+  margin-bottom: 8px;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+.kb-share-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.share-tag {
+  font-size: 11px;
+  color: #1976d2;
+  background-color: #e3f2fd;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.kb-creator-tag {
+  margin-top: 8px;
+}
+
+.creator-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.creator-tag.mine {
+  color: #2e7d32;
+  background-color: #e8f5e9;
+}
+
+.creator-tag.others {
+  color: #666;
+  background-color: #f5f5f5;
 }
 
 .kb-card-footer {
@@ -820,20 +1265,14 @@ export default {
   padding: 10px 15px;
   background-color: #f8f9fa;
   border-top: 1px solid #eee;
-  align-items: center;
+  gap: 10px;
 }
 
-/* 按钮样式 */
 .action-btn {
   font-size: 12px;
-  padding: 5px 10px;
-  margin-left: 10px;
+  padding: 5px 12px;
   border-radius: 4px;
   border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px;
 }
 
 .rename-btn {
@@ -841,22 +1280,98 @@ export default {
   color: #333;
 }
 
+.share-btn {
+  background-color: #e3f2fd;
+  color: #1976d2;
+}
+
+.unshare-btn {
+  background-color: #fff3e0;
+  color: #f57c00;
+}
+
 .delete-btn {
   background-color: rgba(255, 59, 48, 0.1);
   color: #ff3b30;
 }
 
-.login-btn {
-  background-color: var(--primary-color, #007AFF);
-  color: white;
-  padding: 5px 15px;
-  border-radius: 4px;
+.no-org-tip {
+  text-align: center;
+  padding: 30px;
+  color: #666;
   font-size: 14px;
-  margin-left: 10px;
 }
 
-/* 空状态和加载状态 */
-.empty-state, .loading, .login-hint {
+.no-org-tip .link {
+  color: #007AFF;
+  cursor: pointer;
+}
+
+.share-dialog .dialog-content {
+  max-width: 400px;
+}
+
+.dialog-subtitle {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 20px;
+}
+
+.org-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.org-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.org-item:hover {
+  border-color: #007AFF;
+  background-color: #f8f9fa;
+}
+
+.org-item.selected {
+  border-color: #007AFF;
+  background-color: #e3f2fd;
+}
+
+.org-item.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.org-name {
+  font-size: 14px;
+  color: #333;
+}
+
+.shared-mark {
+  font-size: 12px;
+  color: #999;
+}
+
+.select-mark {
+  font-size: 14px;
+  color: #007AFF;
+  font-weight: bold;
+}
+
+.empty-org {
+  text-align: center;
+  padding: 20px;
+  color: #999;
+}
+
+.empty-state, .loading {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -976,16 +1491,6 @@ export default {
 @media screen and (min-width: 768px) {
   .knowledge-container {
     padding: 30px;
-  }
-  
-  .kb-grid {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  }
-}
-
-@media screen and (min-width: 1200px) {
-  .kb-grid {
-    grid-template-columns: repeat(4, 1fr);
   }
 }
 

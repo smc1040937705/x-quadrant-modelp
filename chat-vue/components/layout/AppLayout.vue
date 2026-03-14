@@ -7,8 +7,8 @@
     <!-- 内容区域 -->
     <view class="pc-content">
       <!-- 顶部导航栏 -->
-      <app-header v-if="hasTitle" :title="title" />
-      <app-header v-else />
+      <app-header v-if="hasTitle" :title="title" :show-back="showBack" />
+      <app-header v-else :show-back="showBack" />
       
       <!-- 主要内容 -->
       <view class="pc-main-content">
@@ -20,8 +20,8 @@
   <!-- 移动端布局 -->
   <view v-else class="mobile-layout">
     <!-- 顶部导航栏 -->
-    <app-header v-if="hasTitle" :title="title" />
-    <app-header v-else />
+    <app-header v-if="hasTitle" :title="title" :show-back="showBack" />
+    <app-header v-else :show-back="showBack" />
     
     <!-- 主要内容 -->
     <view class="mobile-main-content" :class="{'no-tab-bar': hideTabBar}" 

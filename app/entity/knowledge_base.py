@@ -23,7 +23,23 @@ class KnowledgeBase(BaseEntity):
         self.chunk_size = chunk_size if chunk_size is not None else 1000
         self.chunk_overlap = chunk_overlap if chunk_overlap is not None else 200
         self.created_at = created_at
-        # 处理额外的字段
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+class KnowledgeBaseOrganization(BaseEntity):
+    """知识库-组织关联实体类，对应数据库 dodo_kb_organizations 表"""
+    
+    _table_name = 'dodo_kb_organizations'
+    _primary_key = 'id'
+    
+    def __init__(self, id=None, kb_id=None, org_id=None, shared_by=None,
+                 shared_at=None, **kwargs):
+        self.id = id
+        self.kb_id = kb_id
+        self.org_id = org_id
+        self.shared_by = shared_by
+        self.shared_at = shared_at
         for key, value in kwargs.items():
             setattr(self, key, value)
 

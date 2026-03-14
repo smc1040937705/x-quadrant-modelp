@@ -8,6 +8,13 @@
 			}
 		},
 		{
+			"path": "pages/organization/index",
+			"style": {
+				"navigationBarTitleText": "我的组织",
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/knowledge-base/index",
 			"style": {
 				"navigationBarTitleText": "知识库管理",
@@ -103,9 +110,16 @@
 			}
 		},
 		{
-			"path": "pages/bot-modules/edit-bot/index",
+			"path": "pages/organization/detail",
 			"style": {
-				"navigationBarTitleText": "编辑机器人",
+				"navigationBarTitleText": "组织详情",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/organization/join",
+			"style": {
+				"navigationBarTitleText": "加入组织",
 				"navigationStyle": "custom"
 			}
 		}
@@ -122,6 +136,10 @@
 		"backgroundColor": "#FFFFFF",
 		"borderStyle": "black",
 		"list": [
+			{
+				"pagePath": "pages/organization/index",
+				"text": "组织"
+			},
 			{
 				"pagePath": "pages/knowledge-base/index",
 				"text": "知识库"
