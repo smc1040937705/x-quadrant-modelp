@@ -5,10 +5,11 @@ import json
 from datetime import datetime, date
 from app.controllers.chat_controller import ChatController
 from app.controllers.extraction_controller import ExtractionController
-from app.controllers.knowledge_controller import SimpleKnowledgeController, KnowledgeBaseController, KnowledgeBaseFilesController, KnowledgeBaseBasicController
+from app.controllers.knowledge_controller import SimpleKnowledgeController, KnowledgeBaseController, KnowledgeBaseFilesController, KnowledgeBaseBasicController, KnowledgeBaseShareController
 from app.controllers.auth_controller import AuthCodeResource, AuthLoginRegisterResource, AuthVerifyTokenResource
 from app.controllers.file_controller import FileController
 from app.controllers.document_template_controller import DocumentTemplateController, DocumentGenerationController, GenerationHistoryController, DocumentExportController
+from app.controllers.organization_controller import org_controller
 from app.services.chat_service import ChatService
 from app.services.bot_service import BotService
 from common import log_
@@ -47,6 +48,8 @@ api.add_resource(ExtractionController, '/llm/extract')
 api.add_resource(KnowledgeBaseController, '/llm/knowledge-bases', endpoint='knowledge_bases')
 api.add_resource(KnowledgeBaseController, '/llm/knowledge-bases/<string:kb_id>', endpoint='kb_detail')
 api.add_resource(KnowledgeBaseBasicController, '/llm/knowledge-bases/basic')
+api.add_resource(KnowledgeBaseShareController, '/llm/knowledge-bases/<int:kb_id>/share', endpoint='kb_share')
+api.add_resource(KnowledgeBaseShareController, '/llm/knowledge-bases/<int:kb_id>/share/<int:org_id>', endpoint='kb_unshare')
 
 # 文档管理API - 保持 /llm 前缀
 api.add_resource(SimpleKnowledgeController, '/llm/documents', endpoint='documents')
@@ -142,5 +145,66 @@ def stream_chat_endpoint(conversation_id=None):
             f'data: {{"code": "SYSTEM_ERROR", "message": {json.dumps(str(e), ensure_ascii=False)}}}\n\n',
             mimetype='text/event-stream'
         )
+
+# 组织管理API路由
+@frontend_bp.route('/org/organizations', methods=['GET'])
+def get_organizations():
+    """获取用户的组织列表"""
+    return org_controller.get_organizations()
+
+@frontend_bp.route('/org/organizations', methods=['POST'])
+def create_organization():
+    """创建组织"""
+    return org_controller.create_organization()
+
+@frontend_bp.route('/org/organizations/<int:org_id>', methods=['GET'])
+def get_organization(org_id):
+    """获取组织详情"""
+    return org_controller.get_organization(org_id)
+
+@frontend_bp.route('/org/organizations/<int:org_id>', methods=['PUT'])
+def update_organization(org_id):
+    """更新组织信息"""
+    return org_controller.update_organization(org_id)
+
+@frontend_bp.route('/org/organizations/<int:org_id>', methods=['DELETE'])
+def dissolve_organization(org_id):
+    """解散组织"""
+    return org_controller.dissolve_organization(org_id)
+
+@frontend_bp.route('/org/organizations/<int:org_id>/members', methods=['GET'])
+def get_org_members(org_id):
+    """获取组织成员列表"""
+    return org_controller.get_members(org_id)
+
+@frontend_bp.route('/org/organizations/<int:org_id>/members/<int:member_user_id>', methods=['DELETE'])
+def remove_org_member(org_id, member_user_id):
+    """移除组织成员"""
+    return org_controller.remove_member(org_id, member_user_id)
+
+@frontend_bp.route('/org/organizations/<int:org_id>/members/<int:member_user_id>/role', methods=['PUT'])
+def set_member_role(org_id, member_user_id):
+    """设置成员角色"""
+    return org_controller.set_member_role(org_id, member_user_id)
+
+@frontend_bp.route('/org/organizations/<int:org_id>/leave', methods=['POST'])
+def leave_organization(org_id):
+    """退出组织"""
+    return org_controller.leave_organization(org_id)
+
+@frontend_bp.route('/org/organizations/<int:org_id>/invite', methods=['POST'])
+def create_invite(org_id):
+    """创建邀请链接"""
+    return org_controller.create_invite(org_id)
+
+@frontend_bp.route('/org/invites/<string:invite_code>', methods=['GET'])
+def get_invite_info(invite_code):
+    """获取邀请信息（无需登录）"""
+    return org_controller.get_invite_info(invite_code)
+
+@frontend_bp.route('/org/invites/<string:invite_code>/accept', methods=['POST'])
+def accept_invite(invite_code):
+    """接受邀请加入组织"""
+    return org_controller.accept_invite(invite_code)
 
 # 这里可以添加更多前端需要的路由

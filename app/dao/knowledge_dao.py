@@ -7,7 +7,7 @@ import json
 from common import log_
 from common.error_codes import APIException, ErrorCode
 from app.dao.mapper import BaseMapper
-from app.entity.knowledge_base import KnowledgeBase, Document, DocumentChunk
+from app.entity.knowledge_base import KnowledgeBase, Document, DocumentChunk, KnowledgeBaseOrganization
 from common.db_utils import get_db_connection
 
 
@@ -27,7 +27,7 @@ class KnowledgeBaseDAO(BaseMapper):
     
     @classmethod
     def find_by_user_id(cls, user_id, include_public=True):
-        """查找用户的所有知识库"""
+        """查找用户的所有知识库（个人创建的）"""
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
                 if include_public:
@@ -50,7 +50,67 @@ class KnowledgeBaseDAO(BaseMapper):
                 for row in cursor.fetchall():
                     row_dict = dict(zip(columns, row))
                     kb = KnowledgeBase.from_dict(row_dict)
-                    results.append(kb.to_dict())
+                    kb_dict = kb.to_dict()
+                    kb_dict['owner_type'] = 'personal'
+                    results.append(kb_dict)
+                return results
+    
+    @classmethod
+    def find_personal_kbs(cls, user_id):
+        """查找用户个人创建的知识库"""
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                sql = """
+                    SELECT kb.*, 
+                           (SELECT COUNT(*) FROM dodo_kb_documents WHERE kb_id = kb.id) as doc_count
+                    FROM dodo_knowledge_bases kb
+                    WHERE kb.created_by = %s 
+                    ORDER BY kb.id DESC
+                """
+                cursor.execute(sql, (user_id,))
+                columns = [desc[0] for desc in cursor.description]
+                results = []
+                for row in cursor.fetchall():
+                    row_dict = dict(zip(columns, row))
+                    kb = KnowledgeBase.from_dict(row_dict)
+                    kb_dict = kb.to_dict()
+                    kb_dict['owner_type'] = 'personal'
+                    kb_dict['doc_count'] = row_dict.get('doc_count', 0)
+                    results.append(kb_dict)
+                return results
+    
+    @classmethod
+    def find_with_shared_info(cls, user_id):
+        """查找用户的知识库，包含共享信息"""
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                sql = """
+                    SELECT kb.*, 
+                           (SELECT COUNT(*) FROM dodo_kb_documents WHERE kb_id = kb.id) as doc_count,
+                           COALESCE(
+                               json_agg(
+                                   json_build_object('org_id', ko.org_id, 'org_name', o.name)
+                               ) FILTER (WHERE ko.org_id IS NOT NULL),
+                               '[]'::json
+                           ) as shared_to_orgs
+                    FROM dodo_knowledge_bases kb
+                    LEFT JOIN dodo_kb_organizations ko ON kb.id = ko.kb_id
+                    LEFT JOIN dodo_organizations o ON ko.org_id = o.id
+                    WHERE kb.created_by = %s
+                    GROUP BY kb.id
+                    ORDER BY kb.id DESC
+                """
+                cursor.execute(sql, (user_id,))
+                columns = [desc[0] for desc in cursor.description]
+                results = []
+                for row in cursor.fetchall():
+                    row_dict = dict(zip(columns, row))
+                    kb = KnowledgeBase.from_dict(row_dict)
+                    kb_dict = kb.to_dict()
+                    kb_dict['owner_type'] = 'personal'
+                    kb_dict['doc_count'] = row_dict.get('doc_count', 0)
+                    kb_dict['shared_to_orgs'] = row_dict.get('shared_to_orgs') or []
+                    results.append(kb_dict)
                 return results
     
     @classmethod
@@ -331,3 +391,130 @@ class DocumentChunkDAO(BaseMapper):
         except Exception as e:
             log_.error(f"向量相似度搜索失败: {str(e)}")
             return []
+
+
+class KnowledgeBaseOrganizationDAO(BaseMapper):
+    """知识库-组织关联Mapper"""
+    
+    entity_class = KnowledgeBaseOrganization
+    table_name = 'dodo_kb_organizations'
+    primary_key = 'id'
+    
+    @classmethod
+    def share_to_organization(cls, kb_id, org_id, shared_by):
+        """将知识库共享到组织"""
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO dodo_kb_organizations (kb_id, org_id, shared_by, shared_at)
+                        VALUES (%s, %s, %s, NOW())
+                        ON CONFLICT (kb_id, org_id) DO NOTHING
+                        RETURNING id
+                    """, (kb_id, org_id, shared_by))
+                    result = cursor.fetchone()
+                    conn.commit()
+                    return result[0] if result else None
+        except Exception as e:
+            log_.error(f"共享知识库到组织失败: {str(e)}")
+            raise APIException(ErrorCode.DATABASE_ERROR, msg="共享知识库到组织失败")
+    
+    @classmethod
+    def unshare_from_organization(cls, kb_id, org_id):
+        """取消知识库在组织的共享"""
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        DELETE FROM dodo_kb_organizations 
+                        WHERE kb_id = %s AND org_id = %s
+                    """, (kb_id, org_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except Exception as e:
+            log_.error(f"取消知识库共享失败: {str(e)}")
+            raise APIException(ErrorCode.DATABASE_ERROR, msg="取消知识库共享失败")
+    
+    @classmethod
+    def find_organizations_by_kb(cls, kb_id):
+        """获取知识库共享到的所有组织"""
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT ko.*, o.name as org_name
+                        FROM dodo_kb_organizations ko
+                        JOIN dodo_organizations o ON ko.org_id = o.id
+                        WHERE ko.kb_id = %s
+                        ORDER BY ko.shared_at DESC
+                    """, (kb_id,))
+                    columns = [desc[0] for desc in cursor.description]
+                    results = []
+                    for row in cursor.fetchall():
+                        results.append(dict(zip(columns, row)))
+                    return results
+        except Exception as e:
+            log_.error(f"获取知识库共享组织失败: {str(e)}")
+            return []
+    
+    @classmethod
+    def find_shared_kbs_by_org(cls, org_id, user_id=None):
+        """获取组织内共享的所有知识库"""
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT kb.*, ko.shared_at, ko.shared_by,
+                               u.nickname as sharer_name,
+                               o.name as org_name
+                        FROM dodo_knowledge_bases kb
+                        JOIN dodo_kb_organizations ko ON kb.id = ko.kb_id
+                        JOIN dodo_organizations o ON ko.org_id = o.id
+                        LEFT JOIN dodo_users u ON ko.shared_by = u.id
+                        WHERE ko.org_id = %s
+                        ORDER BY ko.shared_at DESC
+                    """, (org_id,))
+                    columns = [desc[0] for desc in cursor.description]
+                    results = []
+                    for row in cursor.fetchall():
+                        row_dict = dict(zip(columns, row))
+                        kb = KnowledgeBase.from_dict(row_dict)
+                        kb_dict = kb.to_dict()
+                        kb_dict['shared_at'] = row_dict.get('shared_at')
+                        kb_dict['shared_by'] = row_dict.get('shared_by')
+                        kb_dict['sharer_name'] = row_dict.get('sharer_name')
+                        kb_dict['org_name'] = row_dict.get('org_name')
+                        kb_dict['owner_type'] = 'shared'
+                        results.append(kb_dict)
+                    return results
+        except Exception as e:
+            log_.error(f"获取组织共享知识库失败: {str(e)}")
+            return []
+    
+    @classmethod
+    def is_shared_to_org(cls, kb_id, org_id):
+        """检查知识库是否已共享到组织"""
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT 1 FROM dodo_kb_organizations 
+                        WHERE kb_id = %s AND org_id = %s
+                    """, (kb_id, org_id))
+                    return cursor.fetchone() is not None
+        except Exception as e:
+            log_.error(f"检查知识库共享状态失败: {str(e)}")
+            return False
+    
+    @classmethod
+    def delete_by_kb(cls, kb_id):
+        """删除知识库的所有共享关系"""
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM dodo_kb_organizations WHERE kb_id = %s", (kb_id,))
+                    conn.commit()
+                    return cursor.rowcount
+        except Exception as e:
+            log_.error(f"删除知识库共享关系失败: {str(e)}")
+            return 0

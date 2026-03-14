@@ -109,28 +109,56 @@
                   <text>加载知识库中...</text>
                 </view>
                 
-                <view v-else-if="knowledgeBases.length === 0" class="empty-kb">
+                <view v-else-if="allKnowledgeBases.length === 0" class="empty-kb">
                   <text>暂无可用知识库</text>
                   <navigator url="/pages/knowledge-base/index" class="kb-action">去创建知识库</navigator>
                 </view>
                 
                 <view v-else class="kb-options">
-                  <view 
-                    v-for="(kb, index) in knowledgeBases" 
-                    :key="kb.id"
-                    class="kb-option"
-                  :class="{ 'selected': botForm.kb_ids[0] === kb.id }"
-                  @tap="selectKnowledgeBase(kb.id, kb.name)"
-                  >
-                  <view class="kb-radio">
-                    <view class="radio-inner" v-if="botForm.kb_ids[0] === kb.id"></view>
-                    </view>
-                    <view class="kb-option-content">
-                      <view class="kb-header">
-                        <text class="kb-name">{{ kb.name }}</text>
-                        <text class="kb-count">{{ kb.documents?.length || 0 }}个文档</text>
+                  <!-- 个人知识库 -->
+                  <view v-if="personalKBs.length > 0" class="kb-group">
+                    <text class="kb-group-title">📚 个人知识库</text>
+                    <view 
+                      v-for="kb in personalKBs" 
+                      :key="kb.id"
+                      class="kb-option"
+                      :class="{ 'selected': botForm.kb_ids[0] === kb.id }"
+                      @tap="selectKnowledgeBase(kb.id, kb.name)"
+                    >
+                      <view class="kb-radio">
+                        <view class="radio-inner" v-if="botForm.kb_ids[0] === kb.id"></view>
                       </view>
-                      <text class="kb-desc">{{ kb.description || '无描述' }}</text>
+                      <view class="kb-option-content">
+                        <view class="kb-header">
+                          <text class="kb-name">{{ kb.name }}</text>
+                          <text class="kb-count">{{ kb.doc_count || 0 }}个文档</text>
+                        </view>
+                        <text class="kb-desc">{{ kb.description || '无描述' }}</text>
+                      </view>
+                    </view>
+                  </view>
+                  
+                  <!-- 组织知识库 -->
+                  <view v-for="org in organizationsWithKBs" :key="org.org_id" class="kb-group">
+                    <text class="kb-group-title">🏢 {{ org.org_name }}</text>
+                    <view 
+                      v-for="kb in org.knowledge_bases" 
+                      :key="kb.id"
+                      class="kb-option"
+                      :class="{ 'selected': botForm.kb_ids[0] === kb.id }"
+                      @tap="selectKnowledgeBase(kb.id, kb.name)"
+                    >
+                      <view class="kb-radio">
+                        <view class="radio-inner" v-if="botForm.kb_ids[0] === kb.id"></view>
+                      </view>
+                      <view class="kb-option-content">
+                        <view class="kb-header">
+                          <text class="kb-name">{{ kb.name }}</text>
+                          <text class="kb-count">{{ kb.doc_count || 0 }}个文档</text>
+                        </view>
+                        <text class="kb-desc">{{ kb.description || '无描述' }}</text>
+                        <text v-if="!kb.is_owner" class="kb-owner-tag">{{ kb.sharer_name || '他人' }}创建</text>
+                      </view>
                     </view>
                   </view>
                 </view>
@@ -169,6 +197,7 @@
 <script>
 import api from '../../../utils/api.js';
 import AppLayout from '../../../components/layout/AppLayout.vue';
+import { getCurrentUser, verifyToken } from '../../../utils/auth.js';
 
 export default {
   components: {
@@ -200,25 +229,31 @@ export default {
       },
       loadingKnowledgeBases: false,
       knowledgeBases: [],
+      personalKBs: [],
+      organizationsWithKBs: [],
       botId: null,
       loginVisible: false,
       creating: false,
-      refreshInterval: null
+      refreshInterval: null,
+      userInfo: null
     };
   },
   computed: {
-    isLoggedIn() {
-      return !!this.userInfo && !!this.userInfo.id;
+    allKnowledgeBases() {
+      const all = [...this.personalKBs];
+      this.organizationsWithKBs.forEach(org => {
+        if (org.knowledge_bases) {
+          all.push(...org.knowledge_bases);
+        }
+      });
+      return all;
     }
   },
   created() {
-    this.checkLoginStatus();
-    
-    // 监听用户信息更新事件
     uni.$on('userInfoUpdated', this.handleUserInfoUpdated);
   },
   mounted() {
-    this.fetchBots();
+    this.validateAndLoad();
   },
   beforeDestroy() {
     if (this.refreshInterval) {
@@ -229,49 +264,53 @@ export default {
     uni.$off('userInfoUpdated', this.handleUserInfoUpdated);
   },
   methods: {
-    // 处理用户信息更新事件
+    async validateAndLoad() {
+      const token = uni.getStorageSync('token');
+      
+      if (!token) {
+        this.redirectToLogin();
+        return;
+      }
+      
+      try {
+        const valid = await verifyToken();
+        if (!valid) {
+          this.redirectToLogin();
+          return;
+        }
+        
+        this.userInfo = getCurrentUser();
+        this.isLoggedIn = true;
+        this.fetchBots();
+      } catch (e) {
+        console.error('验证token失败:', e);
+        this.redirectToLogin();
+      }
+    },
+    
+    redirectToLogin() {
+      uni.removeStorageSync('token');
+      uni.removeStorageSync('userInfo');
+      
+      uni.reLaunch({
+        url: '/pages/user/login/index'
+      });
+    },
+    
     handleUserInfoUpdated(userInfo) {
       this.userInfo = userInfo;
+      this.isLoggedIn = !!userInfo;
       
-      // 检查是否正在退出应用
       const isExitingApp = uni.getStorageSync('isExitingApp');
       if (isExitingApp === 'true') {
         return;
       }
       
-      // 只有在用户登录时才重新加载机器人列表
       if (userInfo) {
         this.fetchBots();
       }
     },
     
-    // 检查登录状态
-    checkLoginStatus() {
-      const token = uni.getStorageSync('token');
-      const userInfoStr = uni.getStorageSync('userInfo');
-      
-      if (!token || !userInfoStr) {
-        uni.reLaunch({
-          url: '/pages/user/login/index'
-        });
-        return;
-      }
-      
-      try {
-        const userInfo = typeof userInfoStr === 'string' ? JSON.parse(userInfoStr) : userInfoStr;
-        this.userInfo = userInfo;
-      } catch (e) {
-        console.error('解析用户信息失败:', e);
-        this.userInfo = null;
-        
-        // 解析失败也跳转到登录页
-        uni.reLaunch({
-          url: '/pages/user/login/index'
-        });
-      }
-    },
-    
-    // 获取机器人列表
     async fetchBots() {
       try {
         this.loading = true;
@@ -351,24 +390,29 @@ export default {
       }
     },
     
-    // 获取知识库列表
     async fetchKnowledgeBases() {
       this.loadingKnowledgeBases = true;
       
       try {
-        const result = await api.get('/llm/knowledge-bases');
+        const result = await api.get('/llm/knowledge-bases/basic');
         
         if (result && (result.code === '0000' || result.code === 'SUCCESS')) {
-          // 获取 knowledge_bases 数组并统一 ID 类型为数字
-          const kbs = result.data?.knowledge_bases || result.data || [];
-          this.knowledgeBases = kbs.map(kb => ({
+          const data = result.data || {};
+          this.personalKBs = (data.personal || []).map(kb => ({
             ...kb,
-            id: Number(kb.id)  // 统一转换为数字类型
+            id: Number(kb.id)
           }));
-          
+          this.organizationsWithKBs = (data.organizations || []).map(org => ({
+            ...org,
+            knowledge_bases: (org.knowledge_bases || []).map(kb => ({
+              ...kb,
+              id: Number(kb.id)
+            }))
+          }));
         } else {
           console.error('获取知识库列表失败:', result?.message || '未知错误');
-          this.knowledgeBases = [];
+          this.personalKBs = [];
+          this.organizationsWithKBs = [];
         }
       } catch (error) {
         console.error('获取知识库列表失败:', error);
@@ -376,7 +420,8 @@ export default {
           title: '获取知识库列表失败',
           icon: 'none'
         });
-        this.knowledgeBases = [];
+        this.personalKBs = [];
+        this.organizationsWithKBs = [];
       } finally {
         this.loadingKnowledgeBases = false;
       }
@@ -910,7 +955,7 @@ export default {
   border: 1px solid #ddd;
   border-radius: 6px;
   background-color: #f8f9fa;
-  max-height: 200px;
+  max-height: 300px;
   overflow-y: auto;
 }
 
@@ -919,11 +964,31 @@ export default {
   flex-direction: column;
 }
 
+.kb-group {
+  margin-bottom: 10px;
+}
+
+.kb-group:last-child {
+  margin-bottom: 0;
+}
+
+.kb-group-title {
+  display: block;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #666;
+  background-color: #eee;
+  position: sticky;
+  top: 0;
+}
+
 .kb-option {
   display: flex;
   padding: 10px;
   border-bottom: 1px solid #eee;
   cursor: pointer;
+  background-color: #fff;
 }
 
 .kb-option:last-child {
@@ -943,6 +1008,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .radio-inner {
@@ -960,6 +1026,13 @@ export default {
   display: flex;
   justify-content: space-between;
   margin-bottom: 5px;
+}
+
+.kb-owner-tag {
+  display: block;
+  font-size: 11px;
+  color: #999;
+  margin-top: 4px;
 }
 
 .kb-count {

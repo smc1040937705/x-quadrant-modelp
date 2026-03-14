@@ -1,6 +1,12 @@
 <template>
   <view class="login-page">
-    <view class="login-container">
+    <!-- Token验证中显示加载状态 -->
+    <view v-if="isCheckingToken" class="checking-token">
+      <text class="loading-text">正在验证登录状态...</text>
+    </view>
+    
+    <!-- 登录表单 -->
+    <view v-else class="login-container">
       <view class="login-header">
         <image class="logo" src="/static/images/logo.png" mode="aspectFit"></image>
         <text class="title">渡渡鸟AI助手</text>
@@ -53,6 +59,7 @@
 <script>
 import api from '../../../utils/api.js';
 import { safeSetStorage, safeGetStorage } from '../../../utils/platform-adapter.js';
+import { verifyToken } from '../../../utils/auth.js';
 
 export default {
   data() {
@@ -63,23 +70,20 @@ export default {
       countdown: 60,
       isLoading: false,
       timer: null,
-      redirectUrl: '/pages/knowledge-base/index' // 默认跳转页面
+      redirectUrl: '/pages/organization/index',
+      isCheckingToken: true
     }
   },
   onLoad(options) {
-    // 清除退出应用标记
     uni.removeStorageSync('isExitingApp');
     
-    // 检查是否是从退出登录跳转过来的
     const isLoggingOut = uni.getStorageSync('isLoggingOut');
     if (isLoggingOut === 'true') {
-      // 如果是从退出登录跳转过来，不做自动跳转
-      // 清除标记
       uni.removeStorageSync('isLoggingOut');
+      this.isCheckingToken = false;
       return;
     }
     
-    // 获取重定向URL
     try {
       const redirectUrl = safeGetStorage('redirectUrl');
       if (redirectUrl) {
@@ -89,26 +93,39 @@ export default {
       console.error('获取重定向URL失败:', e);
     }
     
-    // 检查是否已登录
     this.checkLoginStatus();
   },
   onUnload() {
-    // 清除定时器
     if (this.timer) {
       clearInterval(this.timer);
     }
   },
   methods: {
-    // 检查登录状态
-    checkLoginStatus() {
+    async checkLoginStatus() {
       const token = uni.getStorageSync('token');
       const userInfo = uni.getStorageSync('userInfo');
       
-      if (token && userInfo) {
-        // 已登录则跳转到目标页面
-        uni.reLaunch({
-          url: this.redirectUrl
-        });
+      if (!token || !userInfo) {
+        this.isCheckingToken = false;
+        return;
+      }
+      
+      try {
+        const valid = await verifyToken();
+        if (valid) {
+          uni.reLaunch({
+            url: this.redirectUrl
+          });
+        } else {
+          uni.removeStorageSync('token');
+          uni.removeStorageSync('userInfo');
+          this.isCheckingToken = false;
+        }
+      } catch (e) {
+        console.error('验证token失败:', e);
+        uni.removeStorageSync('token');
+        uni.removeStorageSync('userInfo');
+        this.isCheckingToken = false;
       }
     },
     
@@ -319,7 +336,7 @@ export default {
         // 跳转到目标页面
         setTimeout(() => {
           // 获取重定向URL
-          let redirectUrl = safeGetStorage('redirectUrl') || '/pages/knowledge-base/index';
+          let redirectUrl = safeGetStorage('redirectUrl') || '/pages/organization/index';
           
           // 检查是否是知识库详情页，如果是，确保有有效的知识库ID
           if (redirectUrl.includes('/pages/knowledge-base/detail')) {
@@ -393,6 +410,18 @@ export default {
   background-color: #f8f9fa;
   padding: 40rpx;
   box-sizing: border-box;
+}
+
+.checking-token {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-text {
+  font-size: 28rpx;
+  color: #666;
 }
 
 .login-container {

@@ -5,8 +5,11 @@
     
     <!-- 标题栏 -->
     <view class="title-bar">
-      <!-- 左侧区域：只保留标题，移除返回按钮 -->
+      <!-- 左侧区域：返回按钮和标题 -->
       <view class="header-left">
+        <view v-if="showBack && canGoBack" class="back-btn" @tap="goBack">
+          <text class="back-icon">‹</text>
+        </view>
         <text v-if="showTitle" class="header-title">{{ title }}</text>
       </view>
       
@@ -66,6 +69,10 @@ export default {
     title: {
       type: String,
       default: '智能对话平台'
+    },
+    showBack: {
+      type: Boolean,
+      default: false
     }
   },
   data() {
@@ -84,6 +91,11 @@ export default {
     },
     showTitle() {
       return !!this.title && !!this.title.trim();
+    },
+    canGoBack() {
+      // 判断是否可以返回：页面栈大于1
+      const pages = getCurrentPages();
+      return pages && pages.length > 1;
     }
   },
   created() {
@@ -114,6 +126,21 @@ export default {
     // #endif
   },
   methods: {
+    // 返回上一页
+    goBack() {
+      const pages = getCurrentPages();
+      if (pages.length > 1) {
+        uni.navigateBack({
+          delta: 1
+        });
+      } else {
+        // 如果没有上一页，跳转到工具页
+        uni.switchTab({
+          url: '/pages/tools/index'
+        });
+      }
+    },
+    
     // 切换菜单显示状态
     toggleMenu(event) {
       if (event) event.stopPropagation();
@@ -228,7 +255,21 @@ export default {
     // 导航到指定页面
     navigateTo(url) {
       this.showUserMenu = false;
-      uni.navigateTo({ url });
+      
+      // tabBar页面需要使用switchTab
+      const tabBarPages = [
+        '/pages/organization/index',
+        '/pages/knowledge-base/index',
+        '/pages/bot-modules/bot-list/index',
+        '/pages/tools/index',
+        '/pages/settings/index'
+      ];
+      
+      if (tabBarPages.includes(url)) {
+        uni.switchTab({ url });
+      } else {
+        uni.navigateTo({ url });
+      }
     },
     
     // 退出登录
@@ -402,6 +443,22 @@ export default {
 .header-left {
   display: flex;
   align-items: center;
+}
+
+.back-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+  cursor: pointer;
+}
+
+.back-icon {
+  font-size: 28px;
+  color: #333;
+  font-weight: 300;
 }
 
 .header-title {

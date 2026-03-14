@@ -245,6 +245,10 @@ class KnowledgeService:
                 if doc["minio_path"]:
                     self.minio_client.delete_file(doc["minio_path"])
             
+            # 删除知识库的共享关系
+            from app.dao.knowledge_dao import KnowledgeBaseOrganizationDAO
+            KnowledgeBaseOrganizationDAO().delete_by_kb(kb_id)
+            
             # 删除知识库（会级联删除文档和文档块）
             KnowledgeBaseDAO().delete(kb_id)
             
@@ -911,21 +915,134 @@ class KnowledgeService:
             return True
 
     def get_knowledge_bases_with_count(self, user_id=None):
-        """获取知识库基本信息列表和文件计数（不包含文档内容）"""
+        """获取知识库列表（按个人/组织分类）
+        
+        返回结构:
+        {
+            'personal': [...],  # 个人知识库（包含共享信息）
+            'organizations': [  # 组织及其共享的知识库
+                {
+                    'org_id': 1,
+                    'org_name': 'xxx',
+                    'role': 'owner/member',
+                    'knowledge_bases': [...]
+                },
+                ...
+            ]
+        }
+        """
         try:
-            if user_id:
-                kb_list = KnowledgeBaseDAO().find_by_user_id(user_id, include_public=True)
-            else:
-                kb_list = KnowledgeBaseDAO().find_public_only()
+            if not user_id:
+                return {'personal': [], 'organizations': []}
             
-            # 为每个知识库添加文件计数
-            for kb in kb_list:
-                kb_id = kb["id"]
-                # 获取知识库中的文档数量
-                doc_count = DocumentDAO().count_by_kb_id(kb_id)
-                kb["doc_count"] = doc_count
+            from app.dao.knowledge_dao import KnowledgeBaseOrganizationDAO
+            from app.dao.organization_dao import OrganizationDAO, OrganizationMemberDAO
             
-            return kb_list
+            # 1. 获取用户个人知识库（包含共享信息）
+            personal_kbs = KnowledgeBaseDAO().find_with_shared_info(user_id)
+            
+            # 2. 获取用户所属的组织
+            org_member_dao = OrganizationMemberDAO()
+            user_orgs = org_member_dao.find_orgs_by_user(user_id)
+            
+            # 3. 获取每个组织内共享的知识库
+            organizations = []
+            kb_org_dao = KnowledgeBaseOrganizationDAO()
+            
+            for org in user_orgs:
+                org_id = org.get('org_id') or org.get('id')
+                shared_kbs = kb_org_dao.find_shared_kbs_by_org(org_id)
+                
+                # 为每个知识库添加文档计数
+                for kb in shared_kbs:
+                    kb['doc_count'] = DocumentDAO().count_by_kb_id(kb['id'])
+                    # 标记是否是当前用户创建的
+                    kb['is_owner'] = kb.get('created_by') == user_id
+                
+                organizations.append({
+                    'org_id': org_id,
+                    'org_name': org.get('name') or org.get('org_name'),
+                    'role': org.get('role'),
+                    'knowledge_bases': shared_kbs
+                })
+            
+            return {
+                'personal': personal_kbs,
+                'organizations': organizations
+            }
         except Exception as e:
             log_.error(f"获取知识库列表失败: {str(e)}")
             raise APIException(ErrorCode.SYSTEM_ERROR, msg=f"获取知识库列表失败: {str(e)}")
+    
+    def share_knowledge_base_to_org(self, kb_id, org_id, user_id):
+        """将知识库共享到组织"""
+        try:
+            from app.dao.knowledge_dao import KnowledgeBaseOrganizationDAO
+            from app.dao.organization_dao import OrganizationMemberDAO
+            
+            # 检查知识库是否存在且属于当前用户
+            kb = KnowledgeBaseDAO().find_by_id(kb_id)
+            if not kb:
+                raise FileNotFoundError("知识库不存在")
+            if kb.get('created_by') != user_id:
+                raise PermissionError("只能共享自己创建的知识库")
+            
+            # 检查用户是否属于该组织
+            org_member_dao = OrganizationMemberDAO()
+            member = org_member_dao.find_by_org_and_user(org_id, user_id)
+            if not member:
+                raise PermissionError("您不是该组织的成员")
+            
+            # 执行共享
+            kb_org_dao = KnowledgeBaseOrganizationDAO()
+            result = kb_org_dao.share_to_organization(kb_id, org_id, user_id)
+            
+            return {'success': True, 'id': result}
+        except (FileNotFoundError, PermissionError) as e:
+            raise
+        except Exception as e:
+            log_.error(f"共享知识库失败: {str(e)}")
+            raise APIException(ErrorCode.SYSTEM_ERROR, msg=f"共享知识库失败: {str(e)}")
+    
+    def unshare_knowledge_base_from_org(self, kb_id, org_id, user_id):
+        """取消知识库在组织的共享"""
+        try:
+            from app.dao.knowledge_dao import KnowledgeBaseOrganizationDAO
+            
+            # 检查知识库是否存在且属于当前用户
+            kb = KnowledgeBaseDAO().find_by_id(kb_id)
+            if not kb:
+                raise FileNotFoundError("知识库不存在")
+            if kb.get('created_by') != user_id:
+                raise PermissionError("只能取消共享自己创建的知识库")
+            
+            # 执行取消共享
+            kb_org_dao = KnowledgeBaseOrganizationDAO()
+            result = kb_org_dao.unshare_from_organization(kb_id, org_id)
+            
+            return {'success': result}
+        except (FileNotFoundError, PermissionError) as e:
+            raise
+        except Exception as e:
+            log_.error(f"取消共享知识库失败: {str(e)}")
+            raise APIException(ErrorCode.SYSTEM_ERROR, msg=f"取消共享知识库失败: {str(e)}")
+    
+    def get_kb_shared_orgs(self, kb_id, user_id):
+        """获取知识库共享到的组织列表"""
+        try:
+            from app.dao.knowledge_dao import KnowledgeBaseOrganizationDAO
+            
+            # 检查知识库是否存在且属于当前用户
+            kb = KnowledgeBaseDAO().find_by_id(kb_id)
+            if not kb:
+                raise FileNotFoundError("知识库不存在")
+            if kb.get('created_by') != user_id:
+                raise PermissionError("只能查看自己创建的知识库的共享信息")
+            
+            kb_org_dao = KnowledgeBaseOrganizationDAO()
+            return kb_org_dao.find_organizations_by_kb(kb_id)
+        except (FileNotFoundError, PermissionError) as e:
+            raise
+        except Exception as e:
+            log_.error(f"获取知识库共享组织失败: {str(e)}")
+            raise APIException(ErrorCode.SYSTEM_ERROR, msg=f"获取知识库共享组织失败: {str(e)}")
